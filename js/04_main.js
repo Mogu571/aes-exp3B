@@ -9,13 +9,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
     }
 
-    // 随机打乱图片呈现顺序
-    IMAGE_LIST = jsPsych.randomization.shuffle(IMAGE_LIST);
-
-    // 收集所有需要预加载的图片路径
-    const imagesToPreload = IMAGE_LIST.map(item => item.imageUrl);
-
-    // 初始化 jsPsych
+    // ✅ 先初始化 jsPsych
     jsPsych = initJsPsych({
         on_finish: () => {
             console.log("实验完全结束！");
@@ -24,6 +18,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    // ✅ 然后再使用 jsPsych.randomization（顺序很重要！）
+    IMAGE_LIST = jsPsych.randomization.shuffle(IMAGE_LIST);
+
+    // 收集所有需要预加载的图片路径
+    const imagesToPreload = IMAGE_LIST.map(item => item.imageUrl);
+
     // 创建预加载 trial
     const preloadTrial = {
         type: jsPsychPreload,
@@ -31,10 +31,16 @@ document.addEventListener("DOMContentLoaded", () => {
         message: '正在加载实验材料，请稍候...',
         show_progress_bar: true,
         continue_after_error: false,
-        error_message: '❌ 部分图片加载失败，请检查网络连接后刷新页面重试。'
+        error_message: '❌ 部分图片加载失败，请检查网络连接后刷新页面重试。',
+        on_success: () => {
+            console.log('✅ 所有图片预加载完成！');
+        },
+        on_error: (file) => {
+            console.error('❌ 图片加载失败:', file);
+        }
     };
 
-    // 构建实验时间线（来自 03_timeline.js）
+    // 构建实验时间线
     const experimentTimeline = buildTimeline();
 
     // 组合完整时间线：预加载 + 实验内容
