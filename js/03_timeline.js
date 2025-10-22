@@ -1,6 +1,142 @@
 // -------------------------- 实验流程（Timeline） --------------------------
 // 使用函数构建timeline，确保所有插件已加载
+
+// 简化的数据下载功能 - 只支持TXT格式
+function downloadData(dataText, fileName) {
+    try {
+        // 方法1：尝试使用 FileSaver.js (如果可用)
+        if (typeof saveAs !== 'undefined') {
+            const blob = new Blob([dataText], { type: "text/plain; charset=utf-8" });
+            saveAs(blob, fileName);
+            console.log("使用 FileSaver.js 下载成功");
+            return true;
+        }
+    } catch (error) {
+        console.warn("FileSaver.js 下载失败，尝试原生方法:", error);
+    }
+    
+    try {
+        // 方法2：使用原生浏览器下载
+        const blob = new Blob([dataText], { type: "text/plain; charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        console.log("使用原生方法下载成功");
+        return true;
+    } catch (error) {
+        console.warn("原生下载失败，尝试备用方法:", error);
+    }
+    
+    try {
+        // 方法3：使用 data URI 下载
+        const dataUri = 'data:text/plain;charset=utf-8,' + encodeURIComponent(dataText);
+        const a = document.createElement('a');
+        a.href = dataUri;
+        a.download = fileName;
+        a.click();
+        console.log("使用 data URI 下载成功");
+        return true;
+    } catch (error) {
+        console.error("所有下载方法都失败:", error);
+    }
+    
+    // 方法4：最后的备用方案 - 显示数据让用户复制
+    showDataForCopy(dataText, fileName);
+    return false;
+}
+
+// 显示数据供用户复制的备用方案
+function showDataForCopy(dataText, fileName) {
+    const newWindow = window.open('', '_blank', 'width=800,height=600');
+    if (newWindow) {
+        newWindow.document.write(`
+            <html>
+                <head>
+                    <title>实验数据 - ${fileName}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 20px; }
+                        textarea { width: 100%; height: 70%; font-family: monospace; }
+                        .copy-btn { background: #007cba; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin: 10px 5px; }
+                        .copy-btn:hover { background: #005a8b; }
+                    </style>
+                </head>
+                <body>
+                    <h2>实验数据 (${fileName})</h2>
+                    <p>由于自动下载失败，请手动复制以下数据并保存为 TXT 文件：</p>
+                    <button class="copy-btn" onclick="copyToClipboard()">复制数据</button>
+                    <button class="copy-btn" onclick="selectAll()">全选</button>
+                    <br>
+                    <textarea id="dataText" readonly>${dataText}</textarea>
+                    <script>
+                        function copyToClipboard() {
+                            const textarea = document.getElementById('dataText');
+                            textarea.select();
+                            document.execCommand('copy');
+                            alert('数据已复制到剪贴板！');
+                        }
+                        function selectAll() {
+                            document.getElementById('dataText').select();
+                        }
+                    </script>
+                </body>
+            </html>
+        `);
+        console.log("数据已在新窗口中显示供复制");
+    } else {
+        // 如果无法打开新窗口，在当前页面显示
+        alert(`下载失败！请手动复制以下数据并保存为 TXT 文件：\n\n${dataText.substring(0, 500)}...\n\n完整数据请查看控制台。`);
+        console.log("完整实验数据：", dataText);
+    }
+}
+
+// 保存数据到本地存储作为备份
+function saveBackupData() {
+    try {
+        const backupData = {
+            subjectName: GLOBAL_DATA.subjectName,
+            experimentLog: GLOBAL_DATA.experimentLog,
+            timestamp: new Date().toISOString()
+        };
+        localStorage.setItem('experiment_backup', JSON.stringify(backupData));
+    } catch (error) {
+        console.warn("本地备份失败:", error);
+    }
+}
+
+// 检查并恢复备份数据
+function checkBackupData() {
+    try {
+        const backup = localStorage.getItem('experiment_backup');
+        if (backup) {
+            const backupData = JSON.parse(backup);
+            const timeDiff = new Date() - new Date(backupData.timestamp);
+            const hoursDiff = timeDiff / (1000 * 60 * 60);
+            
+            if (hoursDiff < 24) { // 24小时内的备份
+                const trialCount = backupData.experimentLog.length - 1;
+                if (confirm(`发现 ${new Date(backupData.timestamp).toLocaleString()} 的实验数据备份（${trialCount} 个试次），是否下载？`)) {
+                    const dataText = backupData.experimentLog.join("\n");
+                    const fileName = `${backupData.subjectName}_备份数据_${backupData.timestamp.slice(0,10)}.txt`;
+                    downloadData(dataText, fileName);
+                    localStorage.removeItem('experiment_backup');
+                }
+            }
+        }
+    } catch (error) {
+        console.warn("检查备份数据失败:", error);
+    }
+}
+
 function buildTimeline() {
+    // 页面加载时检查备份数据
+    setTimeout(checkBackupData, 1000);
+    
     const timeline = [];
 
     // -------------------------- 环节1：被试姓名录入 --------------------------
@@ -27,6 +163,7 @@ function buildTimeline() {
                 GLOBAL_DATA.subjectName = `匿名被试_${new Date().getTime()}`;
             }
             GLOBAL_DATA.experimentLog[0] = `被试姓名：${GLOBAL_DATA.subjectName}`;
+            saveBackupData();
         }
     };
     timeline.push(nameTrial);
@@ -126,34 +263,10 @@ function buildTimeline() {
                 GLOBAL_DATA.experimentLog.push(
                     `${currentImage.imageId}\t${currentImage.imageType}\t${currentImage.beautyScore}\t${currentImage.imageViewTime}`
                 );
+                // 每完成一个试次就备份数据
+                saveBackupData();
             }
         };
-        // 子环节5：维度2 - 愉悦度评分
-       /* const pleasureRatingTrial = {
-            type: CustomRatingPlugin,
-            labelLeft: "很不愉悦",
-            labelRight: "非常愉悦",
-            prompt: "请评价观看图片的愉悦度",
-            post_trial_gap: 300,
-            on_finish: (data) => {
-                currentImage.pleasureScore = data.rating;
-            }
-        }; */
-
-        // 子环节6：维度3 - 喜好度评分
-       /* const likeRatingTrial = {
-            type: CustomRatingPlugin,
-            labelLeft: "很不喜欢",
-            labelRight: "非常喜欢",
-            prompt: "请评价对图片的喜好度",
-            post_trial_gap: 500,
-            on_finish: (data) => {
-                currentImage.likeScore = data.rating;
-                GLOBAL_DATA.experimentLog.push(
-                    `${currentImage.imageId}\t${currentImage.imageType}\t${currentImage.beautyScore}\t${currentImage.pleasureScore}\t${currentImage.likeScore}\t${currentImage.imageViewTime}`
-                );
-            }
-        }; */
 
         // 将当前试次的5个子环节加入时间线
         timeline.push(fixationTrial, blankTrial, imageTrial, imageWaitTrial, beautyRatingTrial);
@@ -167,23 +280,39 @@ function buildTimeline() {
                 <h2 style="font-size: 28px; color: #28a745; margin-bottom: 30px;">✓ 实验已完成！</h2>
                 <p style="font-size: 18px; margin-bottom: 40px; color: #495057;">感谢您的参与！</p>
                 <p style="font-size: 16px; margin-bottom: 30px; color: #6c757d;">请点击下方按钮下载您的实验数据</p>
-                <button id="js-download-btn">
+                <button id="js-download-btn" style="background: #007cba; color: white; padding: 15px 30px; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin: 10px;">
                     下载实验数据
                 </button>
-                <p style="font-size: 14px; margin-top: 20px; color: #9ca3af;">数据将以 TXT 格式保存到本地</p>
+                <p style="font-size: 14px; margin-top: 20px; color: #9ca3af;">
+                    数据将以 TXT 格式保存到本地<br>
+                    如下载失败，数据将在新窗口中显示供复制
+                </p>
+                <div id="download-status" style="margin-top: 15px; font-size: 14px;"></div>
             </div>
         `,
         choices: "NO_KEYS",
         on_load: () => {
             document.body.style.backgroundColor = "#f8f9fa"; // ✅ 恢复白色背景
+            
             setTimeout(() => {
+                const statusDiv = document.getElementById("download-status");
+                
                 document.getElementById("js-download-btn").addEventListener("click", () => {
                     const dataText = GLOBAL_DATA.experimentLog.join("\n");
-                    const blob = new Blob([dataText], { type: "text/plain; charset=utf-8" });
                     const timestamp = new Date().toLocaleString().replace(/[:/ ]/g, "-");
                     const fileName = `${GLOBAL_DATA.subjectName}_实验数据_3B_${timestamp}.txt`;
-                    saveAs(blob, fileName);
+                    
+                    if (downloadData(dataText, fileName)) {
+                        statusDiv.textContent = "✓ 数据下载成功！";
+                        statusDiv.style.color = "#28a745";
+                        // 清除本地备份
+                        localStorage.removeItem('experiment_backup');
+                    } else {
+                        statusDiv.textContent = "⚠ 自动下载失败，已在新窗口显示数据供复制";
+                        statusDiv.style.color = "#ffc107";
+                    }
                 });
+                
             }, 100);
         }
     };
@@ -191,3 +320,23 @@ function buildTimeline() {
 
     return timeline;
 }
+
+// 添加键盘快捷键支持 - Ctrl+S 紧急下载
+document.addEventListener('keydown', function(event) {
+    if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+        event.preventDefault();
+        if (GLOBAL_DATA.experimentLog.length > 1) {
+            const dataText = GLOBAL_DATA.experimentLog.join("\n");
+            const timestamp = new Date().toLocaleString().replace(/[:/ ]/g, "-");
+            const fileName = `${GLOBAL_DATA.subjectName}_紧急备份_${timestamp}.txt`;
+            downloadData(dataText, fileName);
+        }
+    }
+});
+
+// 页面关闭前保存数据
+window.addEventListener('beforeunload', function(event) {
+    if (GLOBAL_DATA.experimentLog.length > 1) {
+        saveBackupData();
+    }
+});
